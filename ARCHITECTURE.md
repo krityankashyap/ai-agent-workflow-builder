@@ -1,8 +1,9 @@
 # ARCHITECTURE — AI Agent Workflow Builder
 
-> **Current milestone: M1 — Schema + permissions** ✅ complete (awaiting reviewer sign-off)
-> Full workflow-engine schema, both permission layers, and the aggregation view — all
-> tracked. Next: **M2 — execution engine (`triggerWorkflowRun` + `runFrom`)**.
+> **Current milestone: M2 — Execution engine (manual)** ✅ complete (awaiting sign-off)
+> `triggerWorkflowRun` Action → resumable `runFrom` executing real `llm_call` (Groq),
+> `http_request`, and `conditional_branch`, persisting every step transition, enforcing
+> quota, and retrying external calls. Next: **M3 — approval gate (`approveStep`)**.
 
 This is the running design log. It records decisions, the JSONB `config` shape per
 step type, the status enums, and the current milestone. Keep it current.
@@ -105,10 +106,42 @@ direct row writes both return nothing.
 and `avg_duration_seconds` (avg of `finished_at - started_at`). Tracked in Hasura, scoped
 to the caller's org via a manual `organization` relationship.
 
-## Step `config` JSONB shapes
+## Execution engine (M2)
 
-_TBD in M2 — one documented shape per step type (`llm_call`, `http_request`,
-`conditional_branch`, `approval_gate`, `db_write`, `notify`)._
+**`triggerWorkflowRun(workflow_id)` Action** (`functions/triggerWorkflowRun.ts`) — the
+trust boundary. It authorizes via forwarded `session_variables["x-hasura-user-id"]`
+(owner/editor in the workflow's org), checks quota, creates the run + a `pending`
+step_run per step, then calls `runFrom(run, 0)`. Handler URL is the **internal** cluster
+address `http://functions:3000/triggerWorkflowRun` (env `FUNCTIONS_INTERNAL_URL`; the
+`/v1` prefix exists only on the public gateway).
+
+**`runFrom(runId, startIndex)`** (`functions/_lib/engine.ts`) — one resumable executor.
+Rebuilds context from prior succeeded step outputs, runs steps in order, persists every
+transition (`pending → running → succeeded/failed/skipped/awaiting_approval`), pauses on
+`approval_gate` (saves `resume_index`), and on terminal completion sets the run status +
+increments `organizations.quota_used` exactly once. `llm_call`/`http_request` go through
+`withRetry` (≥1 retry; records `attempt` + `error`).
+
+### Step `config` JSONB shapes
+
+Templates `{{ ... }}` in string values resolve against the run context
+`{ prev: <last output>, steps: { <position>: <output> } }` — e.g. `{{prev.text}}`,
+`{{steps.0.text}}`.
+
+- **`llm_call`** → `{ prompt, system?, model?, temperature?, max_tokens? }`. Real Groq
+  chat completion (default model `llama-3.3-70b-versatile`). Output `{ text, model }`.
+- **`http_request`** → `{ url, method?, headers?, body? }`. Output `{ status, body }`.
+  (Test hook `_test_fail: true` forces failure to exercise the retry path.)
+- **`conditional_branch`** → `{ left, operator, right, if_false }` where `operator` ∈
+  `contains|not_contains|equals|not_equals|gt|lt` and `if_false` ∈ `skip_next|stop`.
+  Output `{ condition, left, operator, right, if_false }`. On a false condition it either
+  skips the next step or stops the run — this is how the run "branches on the LLM output".
+- **`approval_gate`** → `{}` (M3 adds approver rules). Sets the step to
+  `awaiting_approval`, the run to `paused`, and returns.
+- **`db_write` / `notify`** → stubs that succeed in M2; full behavior in M6.
+
+Secrets: `GROQ_API_KEY` lives in `.secrets` and is injected to functions via
+`nhost.toml` `[[global.environment]]`.
 
 ## Seed
 
@@ -157,3 +190,8 @@ Gotchas learned:
   checks): owner-A builds a workflow; owner-B can't read its workflow/steps/triggers or
   inject a step by exact id; viewer can't create, editor can; editor can't add
   `db_write`/`webhook`, owner can; stats view is org-scoped.
+- **M2 ✅** `triggerWorkflowRun` Action + `runFrom` engine. Verified by
+  `web/scripts/verify-m2.mjs`: a manual run of `llm_call` (real Groq) →
+  `conditional_branch` (true on "URGENT") → `http_request` streams live (observed
+  pending→running→succeeded across snapshots); quota increments; viewer & owner-B are
+  rejected by the handler; a forced failure records `attempt = 2` + error.
