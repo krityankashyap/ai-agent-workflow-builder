@@ -1,5 +1,20 @@
 [global]
 
+# Custom env available to all services incl. Functions (process.env.*).
+# Values that are secrets come from .secrets via the {{ secrets.* }} template.
+[[global.environment]]
+name = 'GROQ_API_KEY'
+value = '{{ secrets.GROQ_API_KEY }}'
+
+# Internal (in-cluster) base URL Hasura uses to call the Functions service for
+# Actions. Must be the Docker service address, NOT the public *.local.nhost.run
+# URL (that resolves to loopback inside the graphql container). Override on cloud.
+# Internal route has NO /v1 prefix (that's added only by the public gateway):
+# the functions server listens on :3000 and serves /<name> directly.
+[[global.environment]]
+name = 'FUNCTIONS_INTERNAL_URL'
+value = 'http://functions:3000'
+
 [hasura]
 version = 'v2.48.10-ce'
 adminSecret = '{{ secrets.HASURA_GRAPHQL_ADMIN_SECRET }}'

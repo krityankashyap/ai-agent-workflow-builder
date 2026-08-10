@@ -1,6 +1,14 @@
-actions: []
+actions:
+  - name: triggerWorkflowRun
+    definition:
+      kind: synchronous
+      handler: '{{FUNCTIONS_INTERNAL_URL}}/triggerWorkflowRun'
+    permissions:
+      - role: user
+    comment: Start a workflow run; handler enforces org role + quota.
 custom_types:
   enums: []
   input_objects: []
-  objects: []
+  objects:
+    - name: TriggerWorkflowRunOutput
   scalars: []
