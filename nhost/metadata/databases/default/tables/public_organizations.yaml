@@ -2,8 +2,6 @@ table:
   name: organizations
   schema: public
 array_relationships:
-  # organizations -> org_members (the membership rows for this org).
-  # Named "members" so permission filters read as `members.user_id`.
   - name: members
     using:
       foreign_key_constraint_on:
@@ -22,9 +20,6 @@ select_permissions:
         - quota_used
         - quota_period_start
         - created_at
-      # ISOLATION CORE: a user may read an org only if they are a member of it.
-      # X-Hasura-User-Id comes from the validated JWT, so guessing an org id
-      # returns zero rows for a non-member.
       filter:
         members:
           user_id:
