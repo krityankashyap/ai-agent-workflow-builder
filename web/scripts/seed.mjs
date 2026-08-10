@@ -28,12 +28,23 @@ const admin = createClient({
 
 const USERS = [
   { key: "ownerA", email: "owner-a@example.com", password: "password123" },
+  { key: "editorA", email: "editor-a@example.com", password: "password123" },
+  { key: "viewerA", email: "viewer-a@example.com", password: "password123" },
   { key: "ownerB", email: "owner-b@example.com", password: "password123" },
 ];
 
 const ORGS = [
-  { name: "Acme Inc (Org A)", ownerKey: "ownerA" },
-  { name: "Globex (Org B)", ownerKey: "ownerB" },
+  { key: "orgA", name: "Acme Inc (Org A)" },
+  { key: "orgB", name: "Globex (Org B)" },
+];
+
+// A user can hold different roles in different orgs — the whole point of keeping
+// roles relational. Org A has all three roles; Org B has its own owner.
+const MEMBERSHIPS = [
+  { orgKey: "orgA", userKey: "ownerA", role: "owner" },
+  { orgKey: "orgA", userKey: "editorA", role: "editor" },
+  { orgKey: "orgA", userKey: "viewerA", role: "viewer" },
+  { orgKey: "orgB", userKey: "ownerB", role: "owner" },
 ];
 
 async function gql(query, variables) {
@@ -104,15 +115,21 @@ async function main() {
     userIds[u.key] = await ensureUser(u);
   }
 
-  console.log("Seeding organizations + memberships…");
+  console.log("Seeding organizations…");
+  const orgIds = {};
   for (const o of ORGS) {
-    const orgId = await ensureOrg(o.name);
-    await ensureMembership(orgId, userIds[o.ownerKey], "owner");
-    console.log(`  ${o.name} → owner ${o.ownerKey} (${orgId})`);
+    orgIds[o.key] = await ensureOrg(o.name);
+    console.log(`  ${o.name} (${orgIds[o.key]})`);
   }
 
-  console.log("\nDone. Demo logins:");
-  for (const u of USERS) console.log(`  ${u.email} / ${u.password}`);
+  console.log("Seeding memberships…");
+  for (const m of MEMBERSHIPS) {
+    await ensureMembership(orgIds[m.orgKey], userIds[m.userKey], m.role);
+    console.log(`  ${m.orgKey}: ${m.userKey} → ${m.role}`);
+  }
+
+  console.log("\nDone. Demo logins (all password123):");
+  for (const u of USERS) console.log(`  ${u.email}`);
 }
 
 main().catch((err) => {
