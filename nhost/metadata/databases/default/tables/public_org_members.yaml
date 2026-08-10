@@ -1,0 +1,25 @@
+table:
+  name: org_members
+  schema: public
+object_relationships:
+  # org_members -> organizations (the org this membership belongs to).
+  - name: organization
+    using:
+      foreign_key_constraint_on: org_id
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - id
+        - org_id
+        - user_id
+        - role
+        - created_at
+      # A user can see the membership rows of any org they themselves belong to
+      # (so the UI can show teammates/roles). Reuses the same org-scoping as
+      # organizations: organization.members must include the caller.
+      filter:
+        organization:
+          members:
+            user_id:
+              _eq: X-Hasura-User-Id
