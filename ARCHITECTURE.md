@@ -1,9 +1,9 @@
 # ARCHITECTURE — AI Agent Workflow Builder
 
-> **Current milestone: M3 — Approval gate** ✅ complete (awaiting sign-off)
-> `approveStep` Action re-checks the approver's role in handler code (Layer 2,
-> mid-execution) and resumes the paused run via `runFrom(run, gate+1)`.
-> Next: **M4 — a second trigger (webhook/event) that starts a run with no button click**.
+> **Current milestone: M4 — Second trigger (webhook)** ✅ complete (awaiting sign-off)
+> A public `functions/webhook.ts` endpoint starts a run from an external POST
+> (authenticated by the trigger's `secret`), with no button click. Next: **M5 —
+> frontend build-out (workflow builder, run/approve UI, quota) + the isolation demo**.
 
 This is the running design log. It records decisions, the JSONB `config` shape per
 step type, the status enums, and the current milestone. Keep it current.
@@ -143,6 +143,17 @@ Templates `{{ ... }}` in string values resolve against the run context
 Secrets: `GROQ_API_KEY` lives in `.secrets` and is injected to functions via
 `nhost.toml` `[[global.environment]]`.
 
+## Triggers
+
+- **manual** — the `triggerWorkflowRun` Action (M2).
+- **webhook** (M4) — `functions/webhook.ts`, a public endpoint external systems POST to:
+  `POST /v1/webhook { trigger_id, secret }`. It constant-time-compares against the
+  trigger's stored `secret` (never exposed via the `user`-role select), checks quota, then
+  runs the workflow through the same `createRun` + `runFrom`, so it streams live and sets
+  `trigger_type = "webhook"`, `triggered_by = null`. No JWT — the secret is the credential,
+  and only an owner can create a webhook trigger (Layer 2).
+- **scheduled** (cron) and **database_event** — M6.
+
 ## Seed
 
 `web/scripts/seed.mjs` (idempotent): creates users via the real auth signup flow, then an
@@ -200,3 +211,7 @@ Gotchas learned:
   viewer and owner-B are rejected by the handler; editor-A approves → the run resumes live
   and completes; `approved_by`/`approved_at` recorded; quota increments once at final
   completion; re-approving a cleared gate → 409.
+- **M4 ✅** webhook trigger (`functions/webhook.ts`). Verified by
+  `web/scripts/verify-m4.mjs`: an external `fetch` (no auth) with a wrong secret → 401 and
+  no run; with the valid secret → a run starts with no button click, streams live, sets
+  `trigger_type=webhook`/`triggered_by=null`, completes, and increments quota.
