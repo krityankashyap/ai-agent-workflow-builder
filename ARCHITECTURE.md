@@ -1,9 +1,9 @@
 # ARCHITECTURE — AI Agent Workflow Builder
 
-> **Current milestone: M2 — Execution engine (manual)** ✅ complete (awaiting sign-off)
-> `triggerWorkflowRun` Action → resumable `runFrom` executing real `llm_call` (Groq),
-> `http_request`, and `conditional_branch`, persisting every step transition, enforcing
-> quota, and retrying external calls. Next: **M3 — approval gate (`approveStep`)**.
+> **Current milestone: M3 — Approval gate** ✅ complete (awaiting sign-off)
+> `approveStep` Action re-checks the approver's role in handler code (Layer 2,
+> mid-execution) and resumes the paused run via `runFrom(run, gate+1)`.
+> Next: **M4 — a second trigger (webhook/event) that starts a run with no button click**.
 
 This is the running design log. It records decisions, the JSONB `config` shape per
 step type, the status enums, and the current milestone. Keep it current.
@@ -195,3 +195,8 @@ Gotchas learned:
   `conditional_branch` (true on "URGENT") → `http_request` streams live (observed
   pending→running→succeeded across snapshots); quota increments; viewer & owner-B are
   rejected by the handler; a forced failure records `attempt = 2` + error.
+- **M3 ✅** `approveStep` Action + resume. Verified by `web/scripts/verify-m3.mjs`: a run
+  with a mid-pipeline `approval_gate` pauses (`awaiting_approval`, quota untouched);
+  viewer and owner-B are rejected by the handler; editor-A approves → the run resumes live
+  and completes; `approved_by`/`approved_at` recorded; quota increments once at final
+  completion; re-approving a cleared gate → 409.
