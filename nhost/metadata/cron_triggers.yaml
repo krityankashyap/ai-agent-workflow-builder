@@ -1,1 +1,6 @@
-[]
+- name: scheduled_workflow_runs
+  webhook: '{{FUNCTIONS_INTERNAL_URL}}/onSchedule'
+  schedule: '* * * * *'
+  include_in_metadata: true
+  payload: {}
+  comment: Starts a run for every workflow with an enabled scheduled trigger.

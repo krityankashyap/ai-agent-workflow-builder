@@ -11,6 +11,7 @@
 - "!include auth_user_roles.yaml"
 - "!include auth_user_security_keys.yaml"
 - "!include auth_users.yaml"
+- "!include public_incoming_events.yaml"
 - "!include public_notifications.yaml"
 - "!include public_org_members.yaml"
 - "!include public_organizations.yaml"

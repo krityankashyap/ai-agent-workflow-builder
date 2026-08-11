@@ -15,11 +15,15 @@ value = '{{ secrets.GROQ_API_KEY }}'
 name = 'FUNCTIONS_INTERNAL_URL'
 value = 'http://functions:3000'
 
-# Full internal URL Hasura Event Triggers POST to (the notify handler). Override
-# on cloud with the deployed functions URL + /notify.
+# Full internal URLs Hasura Event/Cron Triggers POST to. Override on cloud with
+# the deployed functions URL + path.
 [[global.environment]]
 name = 'NOTIFY_WEBHOOK_URL'
 value = 'http://functions:3000/notify'
+
+[[global.environment]]
+name = 'DBEVENT_WEBHOOK_URL'
+value = 'http://functions:3000/onDbEvent'
 
 [hasura]
 version = 'v2.48.10-ce'

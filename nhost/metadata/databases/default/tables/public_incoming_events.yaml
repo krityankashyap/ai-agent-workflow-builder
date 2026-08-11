@@ -1,0 +1,46 @@
+table:
+  name: incoming_events
+  schema: public
+object_relationships:
+  - name: organization
+    using:
+      foreign_key_constraint_on: org_id
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        organization:
+          members:
+            role:
+              _in:
+                - owner
+                - editor
+            user_id:
+              _eq: X-Hasura-User-Id
+      columns:
+        - org_id
+        - payload
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - id
+        - org_id
+        - payload
+        - created_at
+      filter:
+        organization:
+          members:
+            user_id:
+              _eq: X-Hasura-User-Id
+event_triggers:
+  - name: on_incoming_event
+    definition:
+      enable_manual: false
+      insert:
+        columns: '*'
+    retry_conf:
+      interval_sec: 10
+      num_retries: 1
+      timeout_sec: 60
+    webhook_from_env: DBEVENT_WEBHOOK_URL
