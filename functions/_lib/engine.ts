@@ -84,12 +84,14 @@ export async function runFrom(
 ): Promise<{ status: string }> {
   const { steps, stepRunIdByPos, priorOutputs } = await loadRun(runId);
 
-  // Rebuild context from steps that already succeeded (needed when resuming).
+  // Rebuild context from steps that already succeeded (needed when resuming after
+  // an approval). Walk positions in order; don't let control steps with no output
+  // (e.g. an approved approval_gate) clobber `prev`.
   const ctx: Context = { steps: {}, prev: null };
-  for (const pos of Object.keys(priorOutputs).map(Number)) {
+  for (const pos of Object.keys(priorOutputs).map(Number).sort((a, b) => a - b)) {
     if (pos < startIndex) {
       ctx.steps[pos] = priorOutputs[pos];
-      ctx.prev = priorOutputs[pos];
+      if (priorOutputs[pos] != null) ctx.prev = priorOutputs[pos];
     }
   }
 

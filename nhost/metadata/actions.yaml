@@ -1,4 +1,11 @@
 actions:
+  - name: approveStep
+    definition:
+      kind: synchronous
+      handler: '{{FUNCTIONS_INTERNAL_URL}}/approveStep'
+    permissions:
+      - role: user
+    comment: Approve a paused approval_gate step and resume the run.
   - name: triggerWorkflowRun
     definition:
       kind: synchronous
@@ -11,4 +18,5 @@ custom_types:
   input_objects: []
   objects:
     - name: TriggerWorkflowRunOutput
+    - name: ApproveStepOutput
   scalars: []
