@@ -3,8 +3,13 @@
 // Talks to Hasura over the INTERNAL cluster URL with the admin secret, so it
 // bypasses row permissions on purpose — the handlers are the trust boundary and
 // authorize callers themselves (see authz.ts). Never expose this to the browser.
+// Prefer the internal URL when nhost provides it (local docker: http://graphql:8080),
+// else the public GraphQL URL (nhost Cloud sets NHOST_GRAPHQL_URL and the function
+// has real egress to reach it), else the local docker default.
 const GRAPHQL_URL =
-  process.env.HASURA_GRAPHQL_GRAPHQL_URL || "http://graphql:8080/v1/graphql";
+  process.env.HASURA_GRAPHQL_GRAPHQL_URL ||
+  process.env.NHOST_GRAPHQL_URL ||
+  "http://graphql:8080/v1/graphql";
 const ADMIN_SECRET =
   process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.NHOST_ADMIN_SECRET || "";
 
