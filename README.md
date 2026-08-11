@@ -119,8 +119,37 @@ and the internal Functions URLs into services via `[[global.environment]]`.
 
 ## Deployment
 
-_Backend → nhost Cloud, frontend → Vercel. Live URL added after deploy (see
-`ARCHITECTURE.md` for the cloud env overrides)._
+**Live app:** _<add Vercel URL after deploy>_
+
+### Backend → nhost Cloud
+1. Create a free project at [app.nhost.io](https://app.nhost.io) and connect this GitHub
+   repo (nhost auto‑deploys the `nhost/` migrations + metadata and the `functions/`).
+2. In the project's **Secrets**, set:
+   | Secret | Value |
+   |---|---|
+   | `GROQ_API_KEY` | your Groq key |
+   | `FUNCTIONS_INTERNAL_URL` | `http://functions:3000` |
+   | `NOTIFY_WEBHOOK_URL` | `http://functions:3000/notify` |
+   | `DBEVENT_WEBHOOK_URL` | `http://functions:3000/onDbEvent` |
+
+   nhost Cloud uses the same internal service networking as local, so the internal
+   URLs work. If Actions/triggers can't reach Functions, switch these to the public
+   form `https://<subdomain>.functions.<region>.nhost.run/v1[/name]`.
+3. Set the Auth **client URL / allowed redirect** to your Vercel URL.
+
+### Frontend → Vercel
+1. Import the repo, **root directory = `web/`** (framework auto‑detected: Next.js).
+2. Env vars: `NEXT_PUBLIC_NHOST_SUBDOMAIN` and `NEXT_PUBLIC_NHOST_REGION` (from the nhost
+   project's dashboard). Deploy → live URL.
+
+### Seed the cloud
+Point the seed scripts at the cloud project and run them once:
+```bash
+cd web
+NEXT_PUBLIC_NHOST_SUBDOMAIN=<sub> NEXT_PUBLIC_NHOST_REGION=<region> \
+  NHOST_ADMIN_SECRET=<cloud admin secret> node scripts/seed.mjs
+# then seed-demo.mjs (uses the same env)
+```
 
 ## Repo layout
 

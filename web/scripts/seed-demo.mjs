@@ -7,7 +7,10 @@
 // including the owner-only webhook trigger).
 import { createClient } from "@nhost/nhost-js";
 
-const NHOST = { subdomain: "local", region: "local" };
+const NHOST = {
+  subdomain: process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN ?? "local",
+  region: process.env.NEXT_PUBLIC_NHOST_REGION ?? "local",
+};
 const nhost = createClient(NHOST);
 await nhost.auth.signInEmailPassword({ email: "owner-a@example.com", password: "password123" });
 

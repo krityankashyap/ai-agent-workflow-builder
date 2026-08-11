@@ -16,7 +16,10 @@ if (!adminSecret) {
   process.exit(1);
 }
 
-const NHOST = { subdomain: "local", region: "local" };
+const NHOST = {
+  subdomain: process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN ?? "local",
+  region: process.env.NEXT_PUBLIC_NHOST_REGION ?? "local",
+};
 
 // Public client for auth signups/signins (acts as an anonymous end user).
 const auth = createClient(NHOST);

@@ -9,21 +9,23 @@ value = '{{ secrets.GROQ_API_KEY }}'
 # Internal (in-cluster) base URL Hasura uses to call the Functions service for
 # Actions. Must be the Docker service address, NOT the public *.local.nhost.run
 # URL (that resolves to loopback inside the graphql container). Override on cloud.
-# Internal route has NO /v1 prefix (that's added only by the public gateway):
-# the functions server listens on :3000 and serves /<name> directly.
+# URLs Hasura uses to reach Functions for Actions / Event / Cron triggers.
+# Sourced from secrets so each environment sets its own value:
+#   local  -> http://functions:3000...  (internal; the /v1 prefix exists only on
+#             the public gateway, so internal routes are /<name>)
+#   cloud  -> set to the deployed value in the nhost project's secrets
+# See .secrets (local) and README "Deployment" for the exact values.
 [[global.environment]]
 name = 'FUNCTIONS_INTERNAL_URL'
-value = 'http://functions:3000'
+value = '{{ secrets.FUNCTIONS_INTERNAL_URL }}'
 
-# Full internal URLs Hasura Event/Cron Triggers POST to. Override on cloud with
-# the deployed functions URL + path.
 [[global.environment]]
 name = 'NOTIFY_WEBHOOK_URL'
-value = 'http://functions:3000/notify'
+value = '{{ secrets.NOTIFY_WEBHOOK_URL }}'
 
 [[global.environment]]
 name = 'DBEVENT_WEBHOOK_URL'
-value = 'http://functions:3000/onDbEvent'
+value = '{{ secrets.DBEVENT_WEBHOOK_URL }}'
 
 [hasura]
 version = 'v2.48.10-ce'
