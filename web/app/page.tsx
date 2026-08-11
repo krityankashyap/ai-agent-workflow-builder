@@ -1,220 +1,183 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { nhost } from "@/lib/nhost";
-
-// --- Types for the M0 dashboard query --------------------------------------
-
-interface Membership {
-  role: string;
-  organization: {
-    id: string;
-    name: string;
-    plan: string;
-    quota_limit: number;
-    quota_used: number;
-  };
-}
-
-// The user only ever sees memberships for orgs they belong to, because the
-// Hasura select permission on org_members scopes rows to X-Hasura-User-Id.
-const MY_ORGS_QUERY = /* GraphQL */ `
-  query MyOrgs {
-    org_members {
-      role
-      organization {
-        id
-        name
-        plan
-        quota_limit
-        quota_used
-      }
-    }
-  }
-`;
+import {
+  canEdit,
+  createWorkflow,
+  getMemberships,
+  getWorkflows,
+  type Membership,
+  type WorkflowSummary,
+} from "@/lib/api";
+import { AuthForm } from "@/components/AuthForm";
+import { QuotaBar, RoleBadge, RunStatusBadge } from "@/components/ui";
 
 export default function Home() {
   const { session, isLoading, email } = useAuth();
-
-  if (isLoading) {
-    return <Centered>Loading…</Centered>;
-  }
-
+  if (isLoading)
+    return <div className="flex min-h-screen items-center justify-center">Loading…</div>;
   return session ? <Dashboard email={email} /> : <AuthForm />;
 }
 
-// --- Auth form --------------------------------------------------------------
-
-function AuthForm() {
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+function Dashboard({ email }: { email: string | null }) {
+  const router = useRouter();
+  const [memberships, setMemberships] = useState<Membership[] | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [workflows, setWorkflows] = useState<WorkflowSummary[] | null>(null);
+  const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
+  const current = memberships?.find((m) => m.organization.id === orgId);
+
+  useEffect(() => {
+    getMemberships()
+      .then((ms) => {
+        setMemberships(ms);
+        if (ms[0]) setOrgId(ms[0].organization.id);
+      })
+      .catch((e) => setError(e.message));
+  }, []);
+
+  const loadWorkflows = useCallback(async (oid: string) => {
+    setWorkflows(null);
     try {
-      if (mode === "signup") {
-        await nhost.auth.signUpEmailPassword({ email, password });
-      } else {
-        await nhost.auth.signInEmailPassword({ email, password });
-      }
-      // On success the SDK persists the session and fires onChange, which the
-      // AuthProvider listens to — the dashboard renders with no manual refresh.
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Centered>
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm space-y-4 rounded-xl border border-black/10 dark:border-white/15 p-6"
-      >
-        <h1 className="text-xl font-semibold">
-          {mode === "signin" ? "Sign in" : "Create account"}
-        </h1>
-        <input
-          type="email"
-          required
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-md border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 outline-none focus:border-blue-500"
-        />
-        <input
-          type="password"
-          required
-          placeholder="Password (min 9 chars)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-md border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 outline-none focus:border-blue-500"
-        />
-        {error && <p className="text-sm text-red-500">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded-md bg-blue-600 py-2 font-medium text-white disabled:opacity-50"
-        >
-          {busy ? "…" : mode === "signin" ? "Sign in" : "Sign up"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-          className="w-full text-sm text-blue-600 hover:underline"
-        >
-          {mode === "signin"
-            ? "Need an account? Sign up"
-            : "Have an account? Sign in"}
-        </button>
-      </form>
-    </Centered>
-  );
-}
-
-// --- Dashboard --------------------------------------------------------------
-
-function Dashboard({ email }: { email: string | null }) {
-  const [memberships, setMemberships] = useState<Membership[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const resp = await nhost.graphql.request<{ org_members: Membership[] }>({
-        query: MY_ORGS_QUERY,
-      });
-      if (resp.body.errors?.length) {
-        setError(resp.body.errors.map((e) => e.message).join("; "));
-        return;
-      }
-      setMemberships(resp.body.data?.org_members ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load orgs");
+      setWorkflows(await getWorkflows(oid));
+    } catch (e: any) {
+      setError(e.message);
     }
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (orgId) void loadWorkflows(orgId);
+  }, [orgId, loadWorkflows]);
+
+  async function onCreate() {
+    if (!orgId || !newName.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const id = await createWorkflow(orgId, newName.trim());
+      router.push(`/workflows/${id}`);
+    } catch (e: any) {
+      setError(e.message);
+      setBusy(false);
+    }
+  }
 
   async function signOut() {
-    const refreshToken = nhost.getUserSession()?.refreshToken;
-    await nhost.auth.signOut({ refreshToken });
+    await nhost.auth.signOut({ refreshToken: nhost.getUserSession()?.refreshToken });
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl p-8">
-      <header className="mb-8 flex items-center justify-between">
+    <div className="mx-auto w-full max-w-4xl p-6 sm:p-8">
+      <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Agent Workflow Builder</h1>
-          <p className="text-sm opacity-70">Signed in as {email}</p>
+          <p className="text-sm opacity-60">{email}</p>
         </div>
         <button
           onClick={signOut}
-          className="rounded-md border border-black/15 dark:border-white/20 px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+          className="rounded-md border border-black/15 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
         >
           Sign out
         </button>
       </header>
 
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide opacity-60">
-        Your organizations
-      </h2>
-
       {error && (
-        <p className="rounded-md bg-red-500/10 p-3 text-sm text-red-600">
-          {error}
-        </p>
+        <p className="mb-4 rounded-md bg-red-500/10 p-3 text-sm text-red-600">{error}</p>
       )}
 
-      {!error && memberships === null && <p className="opacity-70">Loading…</p>}
-
-      {memberships?.length === 0 && (
-        <p className="opacity-70">
-          You are not a member of any organization yet.
-        </p>
+      {/* Org switcher */}
+      {memberships && memberships.length > 1 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {memberships.map((m) => (
+            <button
+              key={m.organization.id}
+              onClick={() => setOrgId(m.organization.id)}
+              className={`rounded-full border px-3 py-1 text-sm ${
+                m.organization.id === orgId
+                  ? "border-blue-600 bg-blue-600/10 text-blue-600"
+                  : "border-black/15 dark:border-white/20"
+              }`}
+            >
+              {m.organization.name}
+            </button>
+          ))}
+        </div>
       )}
 
-      <ul className="space-y-3">
-        {memberships?.map((m) => (
-          <li
-            key={m.organization.id}
-            className="rounded-xl border border-black/10 dark:border-white/15 p-4"
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-medium">{m.organization.name}</span>
-              <span className="rounded-full bg-blue-600/10 px-2.5 py-0.5 text-xs font-medium text-blue-600">
-                {m.role}
-              </span>
+      {current && (
+        <section className="mb-6 rounded-xl border border-black/10 p-4 dark:border-white/15">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{current.organization.name}</span>
+              <RoleBadge role={current.role} />
             </div>
-            <p className="mt-1 text-sm opacity-70">
-              Plan: {m.organization.plan} · Quota: {m.organization.quota_used}/
-              {m.organization.quota_limit}
-            </p>
-            <p className="mt-1 font-mono text-xs opacity-40">
-              {m.organization.id}
-            </p>
-          </li>
-        ))}
+            <span className="text-xs opacity-50">plan: {current.organization.plan}</span>
+          </div>
+          <QuotaBar
+            used={current.organization.quota_used}
+            limit={current.organization.quota_limit}
+          />
+        </section>
+      )}
+
+      {/* Create workflow (editors/owners only) */}
+      {current && canEdit(current.role) && (
+        <div className="mb-6 flex gap-2">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="New workflow name…"
+            className="flex-1 rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-blue-500 dark:border-white/20"
+          />
+          <button
+            onClick={onCreate}
+            disabled={busy || !newName.trim()}
+            className="rounded-md bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+          >
+            Create
+          </button>
+        </div>
+      )}
+
+      {/* Workflow list */}
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide opacity-60">
+        Workflows
+      </h2>
+      {workflows === null && <p className="opacity-70">Loading…</p>}
+      {workflows?.length === 0 && <p className="opacity-70">No workflows yet.</p>}
+      <ul className="space-y-2">
+        {workflows?.map((w) => {
+          const latest = w.runs[0];
+          return (
+            <li key={w.id}>
+              <Link
+                href={`/workflows/${w.id}`}
+                className="flex items-center justify-between rounded-xl border border-black/10 p-4 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+              >
+                <div>
+                  <div className="font-medium">{w.name}</div>
+                  <div className="mt-1 text-xs opacity-60">
+                    {w.steps.length} steps ·{" "}
+                    {w.triggers.map((t) => t.type).join(", ") || "no triggers"}
+                  </div>
+                </div>
+                {latest ? (
+                  <RunStatusBadge status={latest.status} />
+                ) : (
+                  <span className="text-xs opacity-40">never run</span>
+                )}
+              </Link>
+            </li>
+          );
+        })}
       </ul>
-    </div>
-  );
-}
-
-// --- Layout helper ----------------------------------------------------------
-
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      {children}
     </div>
   );
 }
