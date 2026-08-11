@@ -1,9 +1,9 @@
 # ARCHITECTURE — AI Agent Workflow Builder
 
-> **Current milestone: M5 — Frontend** ✅ code complete (browser click-through pending)
-> Workflow builder, Run button (hidden for viewers), live per-step status via a
-> graphql-ws subscription incl. pause/approve, quota indicator, and in-UI isolation.
-> Next: **M6 — remaining step types (db_write/notify) + cron/db-event triggers + deploy**.
+> **Current milestone: M6 — Broaden + ship** (in progress)
+> ✅ All 6 step types + all 4 trigger types implemented and verified. ✅ Turnkey demo
+> workflow. **Remaining: deploy to nhost Cloud + Vercel, README + ~1-page write-up,
+> recording.**
 
 This is the running design log. It records decisions, the JSONB `config` shape per
 step type, the status enums, and the current milestone. Keep it current.
@@ -138,7 +138,10 @@ Templates `{{ ... }}` in string values resolve against the run context
   skips the next step or stops the run — this is how the run "branches on the LLM output".
 - **`approval_gate`** → `{}` (M3 adds approver rules). Sets the step to
   `awaiting_approval`, the run to `paused`, and returns.
-- **`db_write` / `notify`** → stubs that succeed in M2; full behavior in M6.
+- **`db_write`** (M6) → `{ data? }`. Inserts a row into `workflow_outputs`
+  (defaults to the previous step's output). Owner-only step type.
+- **`notify`** (M6) → `{ channel?, message? }`. Inserts a `notifications` row whose INSERT
+  fires an **Event Trigger** (`functions/notify.ts`) that delivers it. Owner-only.
 
 Secrets: `GROQ_API_KEY` lives in `.secrets` and is injected to functions via
 `nhost.toml` `[[global.environment]]`.
@@ -152,7 +155,12 @@ Secrets: `GROQ_API_KEY` lives in `.secrets` and is injected to functions via
   runs the workflow through the same `createRun` + `runFrom`, so it streams live and sets
   `trigger_type = "webhook"`, `triggered_by = null`. No JWT — the secret is the credential,
   and only an owner can create a webhook trigger (Layer 2).
-- **scheduled** (cron) and **database_event** — M6.
+- **database_event** (M6) — a Hasura **Event Trigger** on INSERT into
+  `public.incoming_events` → `functions/onDbEvent.ts`, which starts a run for every
+  workflow in that org with an enabled `database_event` trigger.
+- **scheduled** (M6) — a Hasura **Cron Trigger** (`cron_triggers.yaml`, every minute) →
+  `functions/onSchedule.ts`, which starts a run for every workflow with an enabled
+  `scheduled` trigger (no-op when there are none).
 
 ## Seed
 
@@ -221,3 +229,7 @@ Gotchas learned:
   `step_runs` subscription + approve). Data layer verified by `web/scripts/verify-m5.mjs`
   (UI query strings + isolation-returns-null); WS subscription confirmed live. Visual
   browser click-through of the 6-point scenario is the remaining sign-off.
+- **M6 (partial)** all 6 step types + 4 trigger types done. `db_write`→`workflow_outputs`,
+  `notify`→Event Trigger (`verify-m6.mjs`); `database_event`→Event Trigger on
+  `incoming_events`, `scheduled`→Cron (`verify-m6c.mjs`); turnkey `seed-demo.mjs`.
+  Remaining: deploy + README/write-up + recording.
