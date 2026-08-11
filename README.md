@@ -1,82 +1,131 @@
 # AI Agent Workflow Builder
 
 A "mini n8n" for chaining AI‑agent steps. Organizations build workflows out of typed
-steps (`llm_call`, `http_request`, `conditional_branch`, `approval_gate`, …), start them
-multiple ways, and every action passes through **two independent permission layers** with
-airtight cross‑org isolation.
+steps, start them multiple ways, watch them run live, and every action passes through
+**two independent permission layers** with airtight cross‑org isolation.
 
 Built on **nhost** (Postgres + Hasura + Auth + Functions) with a **Next.js** frontend.
-
-> **Status:** M0 (skeleton) complete — auth, two orgs with per‑org roles, and cross‑org
-> isolation enforced by Hasura permissions. See [`ARCHITECTURE.md`](./ARCHITECTURE.md)
-> for the design log and current milestone.
 
 ## Architecture in one paragraph
 
 There is exactly **one** authenticated Hasura role (`user`). Per‑org authority
 (`owner` / `editor` / `viewer`) is stored **relationally** in `org_members`, so a user can
 be owner in one org and viewer in another. Every table's permission filter scopes rows to
-the caller via `org_members` keyed on `X-Hasura-User-Id` — guessing another org's id
-returns zero rows. Action handlers (the trust boundary) re‑authorize each call using the
-forwarded, unforgeable session variables.
+the caller via `org_members` keyed on `X-Hasura-User-Id` — so guessing another org's id
+returns zero rows (isolation by construction, not by hiding ids). The serverless **Action
+handlers are the trust boundary**: they run with admin DB access and re‑authorize every
+call using the forwarded, unforgeable session variables. See
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design log and [`WRITEUP.md`](./WRITEUP.md)
+for the ~1‑page summary.
+
+## Features
+
+- **Step types:** `llm_call` (real Groq API, with retry), `http_request` (with retry),
+  `conditional_branch` (if/else on a prior step's output), `approval_gate` (pause →
+  human approval → resume), `db_write` (persist to a table), `notify` (**Hasura Event
+  Trigger**).
+- **Trigger types:** `manual` (Action), `webhook` (public endpoint authed by a secret),
+  `database_event` (**Event Trigger** on a watched table), `scheduled` (**Cron Trigger**).
+- **Two permission layers:** (1) org+role scoping on every table; (2) owner‑only gating
+  for `db_write`/`notify` steps and `webhook` triggers (DB check) **plus** the
+  `approval_gate` role re‑check in the `approveStep` handler.
+- **Live execution:** every step transition is persisted, streamed to the UI via a
+  `graphql-ws` subscription (incl. the paused state) — no refresh.
+- **Quota** per org (checked before a run, incremented on completion) with a UI indicator.
 
 ## Tech stack
 
-- nhost CLI (local Docker dev) · Hasura v2.48 · PostgreSQL 14 · nhost Auth
-- Next.js 16 (App Router) · React 19 · TypeScript · Tailwind
-- `@nhost/nhost-js` v4 SDK
+- nhost CLI (local Docker dev) · Hasura v2.48 · PostgreSQL 14 · nhost Auth · Functions (Node 22)
+- Next.js 16 (App Router) · React 19 · TypeScript · Tailwind · `@nhost/nhost-js` v4 · `graphql-ws`
+- LLM: **Groq** free tier (`llama-3.3-70b-versatile`)
 
 ## Prerequisites
 
-- [nhost CLI](https://docs.nhost.io/platform/cli) (`brew install nhost/tap/nhost`)
+- [nhost CLI](https://docs.nhost.io/platform/cli) — `brew install nhost/tap/nhost`
 - Docker (Docker Desktop running)
 - Node 22+
+- A **Groq API key** (free at console.groq.com) — or run with a stub (see below)
 
 ## Run it locally
 
 ```bash
-# 1. Start the backend (from repo root). First run pulls Docker images.
+# 0. Put your Groq key in the (gitignored) secrets file:
+echo "GROQ_API_KEY = 'gsk_...'" >> .secrets
+
+# 1. Start the backend. First run pulls Docker images. This applies the DB
+#    migrations AND the Hasura metadata (tables, relationships, both permission
+#    layers, Actions, Event/Cron Triggers).
 nhost up --branch vocal-labs
-#    Hasura   -> https://local.hasura.local.nhost.run
-#    GraphQL  -> https://local.graphql.local.nhost.run
 
-# 2. Apply Hasura metadata (tables, relationships, permissions).
-SECRET=$(docker exec vocal-labs-graphql-1 printenv HASURA_GRAPHQL_ADMIN_SECRET)
-nhost dev hasura metadata apply \
-  --endpoint https://local.hasura.local.nhost.run --admin-secret "$SECRET"
-
-# 3. Seed two orgs + owners (idempotent).
+# 2. Seed two orgs with roles, then a turnkey demo workflow (both idempotent).
 cd web
-NHOST_ADMIN_SECRET="$SECRET" node scripts/seed.mjs
-
-# 4. Frontend.
 npm install
+SECRET=$(docker exec vocal-labs-graphql-1 printenv HASURA_GRAPHQL_ADMIN_SECRET)
+NHOST_ADMIN_SECRET="$SECRET" node scripts/seed.mjs
+node scripts/seed-demo.mjs
+
+# 3. Frontend.
 npm run dev            # http://localhost:3000
 ```
 
-### Demo logins (after seeding)
+> **Local DNS note (important on some networks):** the local stack is reached at
+> `*.local.nhost.run`, which resolves to `127.0.0.1` via public DNS. Some networks
+> (hotspots, corporate/ISP DNS with rebind protection) refuse to resolve loopback and the
+> app can't reach the backend. Fix it once, network‑independent:
+> ```
+> echo "127.0.0.1 local.nhost.run local.auth.local.nhost.run local.graphql.local.nhost.run local.hasura.local.nhost.run local.storage.local.nhost.run local.functions.local.nhost.run local.dashboard.local.nhost.run local.mailhog.local.nhost.run" | sudo tee -a /etc/hosts
+> ```
 
-| Email | Password | Sees |
+### Demo logins (after `seed.mjs`)
+
+| Email | Password | Org / role |
 |---|---|---|
-| `owner-a@example.com` | `password123` | Acme Inc (Org A) — owner |
-| `owner-b@example.com` | `password123` | Globex (Org B) — owner |
+| `owner-a@example.com` | `password123` | Acme (Org A) — **owner** |
+| `editor-a@example.com` | `password123` | Acme (Org A) — **editor** |
+| `viewer-a@example.com` | `password123` | Acme (Org A) — **viewer** |
+| `owner-b@example.com` | `password123` | Globex (Org B) — **owner** |
 
-Each user sees **only their own org**. Verify isolation directly:
+`seed-demo.mjs` prints the demo workflow URL and a ready `curl` to fire it via webhook.
 
-```bash
-cd web && node scripts/verify-m0.mjs   # signs in as each user, probes cross-org by id
-```
+### The Final-Task scenario (live)
 
-## Secrets
+1. Sign in as **owner‑a** → open the "Support triage demo" workflow.
+2. **Run** it → steps stream live; it **pauses** at the `approval_gate`.
+3. **Approve** → it resumes and completes, no refresh. (Also fire it via the printed
+   webhook `curl` — no button click.)
+4. Sign in as **viewer‑a** → **no Run button**. Sign in as **owner‑b** → can't see Org A's
+   workflow, and opening the Org A workflow URL shows **"Workflow not found"**.
 
-No secrets are committed. Local secrets live in `.secrets` (gitignored); the local admin
-secret is the nhost default `nhost-admin-secret`. Production secrets are set via nhost /
-Vercel env. The `llm_call` step will read `GROQ_API_KEY` from env (added in a later
-milestone).
+## Verification scripts
+
+Each milestone has a runnable proof under `web/scripts/` (run from `web/`):
+
+| Script | Proves |
+|---|---|
+| `verify-m0.mjs` | each user sees only their own org; cross‑org id probe → `[]` |
+| `verify-m1.mjs` | both permission layers (14 checks) |
+| `verify-m2.mjs` | manual run: Groq + http + branch, live, quota, retry |
+| `verify-m3.mjs` | approval gate: pause → deny → approve → resume live |
+| `verify-m4.mjs` | webhook starts a run from an external POST |
+| `verify-m5.mjs` | UI query strings + in‑UI isolation |
+| `verify-m6.mjs` | `db_write` row + `notify` Event Trigger delivery |
+| `verify-m6c.mjs` | `database_event` + `scheduled` triggers |
+
+## Secrets & env
+
+No secrets are committed. `.secrets` (gitignored) holds the local admin secret (default
+`nhost-admin-secret`), JWT keys, and `GROQ_API_KEY`. `nhost.toml` injects `GROQ_API_KEY`
+and the internal Functions URLs into services via `[[global.environment]]`.
+
+## Deployment
+
+_Backend → nhost Cloud, frontend → Vercel. Live URL added after deploy (see
+`ARCHITECTURE.md` for the cloud env overrides)._
 
 ## Repo layout
 
-- `nhost/` — Hasura migrations, metadata (schema + both permission layers), config
-- `functions/` — serverless Action / Event / Cron handlers (added in later milestones)
-- `web/` — Next.js frontend + `scripts/` (seed, verification)
-- `ASSIGNMENT.md` — full spec · `CLAUDE.md` — durable rules · `ARCHITECTURE.md` — design log
+- `nhost/` — migrations, metadata (schema + both permission layers + Actions/Event/Cron)
+- `functions/` — handlers: `triggerWorkflowRun`, `approveStep`, `webhook`, `notify`,
+  `onDbEvent`, `onSchedule`, and `_lib/` (engine, authz, steps, hasura)
+- `web/` — Next.js frontend + `scripts/` (seed + per‑milestone verification)
+- `ASSIGNMENT.md` · `CLAUDE.md` · `ARCHITECTURE.md` · `WRITEUP.md`
