@@ -9,6 +9,7 @@
 import { adminGql } from "./hasura";
 import {
   Context,
+  resolveTemplates,
   runConditionalBranch,
   runHttpRequest,
   runLlmCall,
@@ -82,7 +83,8 @@ export async function runFrom(
   runId: string,
   startIndex: number
 ): Promise<{ status: string }> {
-  const { steps, stepRunIdByPos, priorOutputs } = await loadRun(runId);
+  const { orgId, workflowId, steps, stepRunIdByPos, priorOutputs } =
+    await loadRun(runId);
 
   // Rebuild context from steps that already succeeded (needed when resuming after
   // an approval). Walk positions in order; don't let control steps with no output
@@ -133,9 +135,35 @@ export async function runFrom(
         attempt = r.attempts;
       } else if (step.type === "conditional_branch") {
         output = runConditionalBranch(step.config, ctx);
-      } else if (step.type === "db_write" || step.type === "notify") {
-        // Full behavior lands in M6; succeed as a no-op so runs don't break.
-        output = { note: `${step.type} executed (stub — full impl in M6)` };
+      } else if (step.type === "db_write") {
+        // Persist a result into our own table (org-scoped). Defaults to the
+        // previous step's output when config.data is omitted.
+        const data = resolveTemplates(step.config?.data ?? ctx.prev ?? {}, ctx);
+        const ins = await adminGql<{ insert_workflow_outputs_one: { id: string } }>(
+          `mutation ($obj: workflow_outputs_insert_input!) {
+             insert_workflow_outputs_one(object: $obj) { id }
+           }`,
+          { obj: { org_id: orgId, workflow_id: workflowId, run_id: runId, data } }
+        );
+        output = { output_id: ins.insert_workflow_outputs_one.id, saved: true };
+      } else if (step.type === "notify") {
+        // Insert a notification row; its INSERT fires a Hasura Event Trigger that
+        // delivers it (functions/notify.ts) — notify "as an Event Trigger".
+        const c = resolveTemplates(step.config ?? {}, ctx);
+        const ins = await adminGql<{ insert_notifications_one: { id: string } }>(
+          `mutation ($obj: notifications_insert_input!) {
+             insert_notifications_one(object: $obj) { id }
+           }`,
+          {
+            obj: {
+              org_id: orgId,
+              run_id: runId,
+              channel: c.channel ?? "log",
+              message: String(c.message ?? "Workflow notification"),
+            },
+          }
+        );
+        output = { notification_id: ins.insert_notifications_one.id };
       } else {
         throw new Error(`Unknown step type: ${step.type}`);
       }
@@ -186,6 +214,7 @@ export async function runFrom(
 
 async function loadRun(runId: string): Promise<{
   orgId: string;
+  workflowId: string;
   steps: Step[];
   stepRunIdByPos: Record<number, string>;
   priorOutputs: Record<number, any>;
@@ -193,6 +222,7 @@ async function loadRun(runId: string): Promise<{
   const data = await adminGql<{
     workflow_runs_by_pk: {
       org_id: string;
+      workflow_id: string;
       workflow: { steps: Step[] };
       step_runs: { id: string; position: number; status: string; output: any }[];
     } | null;
@@ -200,6 +230,7 @@ async function loadRun(runId: string): Promise<{
     `query ($id: uuid!) {
        workflow_runs_by_pk(id: $id) {
          org_id
+         workflow_id
          workflow { steps(order_by: { position: asc }) { id position type config } }
          step_runs(order_by: { position: asc }) { id position status output }
        }
@@ -215,7 +246,13 @@ async function loadRun(runId: string): Promise<{
     stepRunIdByPos[sr.position] = sr.id;
     if (sr.status === "succeeded") priorOutputs[sr.position] = sr.output;
   }
-  return { orgId: run.org_id, steps: run.workflow.steps, stepRunIdByPos, priorOutputs };
+  return {
+    orgId: run.org_id,
+    workflowId: run.workflow_id,
+    steps: run.workflow.steps,
+    stepRunIdByPos,
+    priorOutputs,
+  };
 }
 
 async function setRunStatus(runId: string, status: string): Promise<void> {

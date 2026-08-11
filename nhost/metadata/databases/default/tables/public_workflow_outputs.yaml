@@ -1,0 +1,25 @@
+table:
+  name: workflow_outputs
+  schema: public
+object_relationships:
+  - name: organization
+    using:
+      foreign_key_constraint_on: org_id
+  - name: run
+    using:
+      foreign_key_constraint_on: run_id
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - id
+        - org_id
+        - workflow_id
+        - run_id
+        - data
+        - created_at
+      filter:
+        organization:
+          members:
+            user_id:
+              _eq: X-Hasura-User-Id
