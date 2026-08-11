@@ -58,23 +58,29 @@ async function gql(query, variables) {
   return resp.body.data;
 }
 
-// Create the user via signup; if the email already exists, sign in instead.
-// Either way we return the auth user id.
+// Create the user via the real signup flow, then (as admin) mark it verified and
+// read back its id. This works whether or not the environment requires email
+// verification — nhost Cloud defaults verification ON, so we can't rely on
+// signing in after signup. `admin` bypasses permissions on the tracked auth.users.
 async function ensureUser({ email, password }) {
   try {
-    const resp = await auth.auth.signUpEmailPassword({ email, password });
-    const id = resp.body.session?.user?.id;
-    if (id) {
-      console.log(`  created user ${email} (${id})`);
-      return id;
-    }
+    await auth.auth.signUpEmailPassword({ email, password });
   } catch {
-    // Fall through to sign-in on "email already in use".
+    // Ignore "email already in use" — this is idempotent.
   }
-  const resp = await auth.auth.signInEmailPassword({ email, password });
-  const id = resp.body.session?.user?.id;
+  // Ensure the account is usable for the demo (verified + enabled) and read its
+  // id back in one call.
+  const data = await gql(
+    `mutation ($email: citext!) {
+       updateUsers(where: { email: { _eq: $email } }, _set: { emailVerified: true, disabled: false }) {
+         returning { id }
+       }
+     }`,
+    { email }
+  );
+  const id = data.updateUsers.returning[0]?.id;
   if (!id) throw new Error(`Could not resolve user id for ${email}`);
-  console.log(`  found existing user ${email} (${id})`);
+  console.log(`  user ${email} (${id})`);
   return id;
 }
 
