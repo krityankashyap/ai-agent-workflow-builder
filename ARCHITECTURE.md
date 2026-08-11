@@ -1,9 +1,9 @@
 # ARCHITECTURE — AI Agent Workflow Builder
 
-> **Current milestone: M4 — Second trigger (webhook)** ✅ complete (awaiting sign-off)
-> A public `functions/webhook.ts` endpoint starts a run from an external POST
-> (authenticated by the trigger's `secret`), with no button click. Next: **M5 —
-> frontend build-out (workflow builder, run/approve UI, quota) + the isolation demo**.
+> **Current milestone: M5 — Frontend** ✅ code complete (browser click-through pending)
+> Workflow builder, Run button (hidden for viewers), live per-step status via a
+> graphql-ws subscription incl. pause/approve, quota indicator, and in-UI isolation.
+> Next: **M6 — remaining step types (db_write/notify) + cron/db-event triggers + deploy**.
 
 This is the running design log. It records decisions, the JSONB `config` shape per
 step type, the status enums, and the current milestone. Keep it current.
@@ -215,3 +215,9 @@ Gotchas learned:
   `web/scripts/verify-m4.mjs`: an external `fetch` (no auth) with a wrong secret → 401 and
   no run; with the valid secret → a run starts with no button click, streams live, sets
   `trigger_type=webhook`/`triggered_by=null`, completes, and increments quota.
+- **M5 ✅ (code)** Next.js UI: `lib/graphql.ts` (nhost SDK for query/mutation + a
+  `graphql-ws` `useSubscription` hook), `lib/api.ts` (the 4 named ops), org/workflow list
+  + quota, `Builder` (typed steps + triggers, owner/editor gated), and `RunView` (live
+  `step_runs` subscription + approve). Data layer verified by `web/scripts/verify-m5.mjs`
+  (UI query strings + isolation-returns-null); WS subscription confirmed live. Visual
+  browser click-through of the 6-point scenario is the remaining sign-off.
