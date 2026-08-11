@@ -1,9 +1,9 @@
 # ARCHITECTURE — AI Agent Workflow Builder
 
-> **Current milestone: M6 — Broaden + ship** (in progress)
-> ✅ All 6 step types + all 4 trigger types implemented and verified. ✅ Turnkey demo
-> workflow. **Remaining: deploy to nhost Cloud + Vercel, README + ~1-page write-up,
-> recording.**
+> **Current milestone: M6 — Broaden + ship** ✅ complete (recording is the only optional)
+> All 6 step types + 4 trigger types, turnkey demo, README + write-up, and **deployed**:
+> frontend on Vercel, backend on nhost Cloud (`ap-south-1`). Live:
+> https://ai-agent-workflow-builder-krityankashyaps-projects.vercel.app
 
 This is the running design log. It records decisions, the JSONB `config` shape per
 step type, the status enums, and the current milestone. Keep it current.

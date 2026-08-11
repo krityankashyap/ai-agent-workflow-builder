@@ -119,7 +119,15 @@ and the internal Functions URLs into services via `[[global.environment]]`.
 
 ## Deployment
 
-**Live app:** _<add Vercel URL after deploy>_
+**Live app:** https://ai-agent-workflow-builder-krityankashyaps-projects.vercel.app
+(frontend on Vercel, backend on nhost Cloud — subdomain `fcwebehyitncvjusmahj`, region
+`ap-south-1`). Demo logins are seeded (all `password123`): `owner-a@example.com`,
+`editor-a@example.com`, `viewer-a@example.com`, `owner-b@example.com`.
+
+> **nhost Cloud networking note:** Cloud has no internal `graphql`/`functions` service DNS
+> like local docker, so the Function→GraphQL calls use `NHOST_GRAPHQL_URL` (handled in
+> `functions/_lib/hasura.ts`) and the three `*_URL` secrets are set to the **public**
+> functions URL (`https://<subdomain>.functions.<region>.nhost.run/v1[/name]`).
 
 ### Backend → nhost Cloud
 1. Create a free project at [app.nhost.io](https://app.nhost.io) and connect this GitHub
