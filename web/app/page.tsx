@@ -92,6 +92,15 @@ function Dashboard({ email }: { email: string | null }) {
         <p className="mb-4 rounded-md bg-red-500/10 p-3 text-sm text-red-600">{error}</p>
       )}
 
+      {/* No org membership: don't hang on "Loading…" — say so plainly. */}
+      {memberships && memberships.length === 0 && (
+        <p className="rounded-md border border-black/10 p-4 text-sm opacity-70 dark:border-white/15">
+          You&apos;re signed in as {email}, but you&apos;re not a member of any
+          organization yet. Ask an org owner to invite you, or sign in with one of the
+          seeded demo accounts (e.g. owner-a@example.com).
+        </p>
+      )}
+
       {/* Org switcher */}
       {memberships && memberships.length > 1 && (
         <div className="mb-4 flex flex-wrap gap-2">
@@ -150,7 +159,8 @@ function Dashboard({ email }: { email: string | null }) {
       <h2 className="mb-3 text-sm font-medium uppercase tracking-wide opacity-60">
         Workflows
       </h2>
-      {workflows === null && <p className="opacity-70">Loading…</p>}
+      {memberships === null && <p className="opacity-70">Loading…</p>}
+      {orgId && workflows === null && <p className="opacity-70">Loading…</p>}
       {workflows?.length === 0 && <p className="opacity-70">No workflows yet.</p>}
       <ul className="space-y-2">
         {workflows?.map((w) => {
